@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Календарь погоды</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    *{box-sizing:border-box}
+    :root{--glass:rgba(255,255,255,.16);--border:rgba(255,255,255,.25);--text:#fff;--muted:rgba(255,255,255,.78)}
+    body{margin:0;min-height:100vh;font-family:Arial,sans-serif;color:var(--text);background:linear-gradient(160deg,#0f172a,#1d4ed8);overflow-x:hidden;transition:background .5s ease}
+    body.sun{background:linear-gradient(160deg,#2563eb,#f59e0b)}
+    body.rain{background:linear-gradient(160deg,#1e293b,#020617)}
+    body.cloud{background:linear-gradient(160deg,#64748b,#334155)}
+    body.snow{background:linear-gradient(160deg,#93c5fd,#1e3a8a)}
+    body.thunder{background:linear-gradient(160deg,#111827,#312e81);animation:flash 4s infinite}
+    body.fog{background:linear-gradient(160deg,#64748b,#0f172a)}
+    @keyframes flash{0%,92%,100%{filter:brightness(1)}94%{filter:brightness(2.1)}96%{filter:brightness(.9)}}
+    .effects{position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:1}
+    .app{position:relative;z-index:2;width:min(480px,100%);margin:0 auto;padding:18px}
+    h1{margin:10px 0 4px;font-size:30px;line-height:1;letter-spacing:-.04em}
+    .sub{color:var(--muted);margin-bottom:14px}
+    .card{background:var(--glass);border:1px solid var(--border);backdrop-filter:blur(18px);border-radius:28px;padding:20px;margin:14px 0;box-shadow:0 24px 70px rgba(0,0,0,.25)}
+    .time{text-align:center;font-size:54px;font-weight:900;line-height:1;letter-spacing:-.06em}
+    .date{text-align:center;color:var(--muted);margin-top:10px;text-transform:capitalize}
+    input,button{width:100%;border:none;outline:none;border-radius:18px;padding:15px;font-size:16px}
+    input{color:#0f172a;background:rgba(255,255,255,.96)}
+    button{margin-top:12px;background:rgba(255,255,255,.2);color:#fff;font-weight:800;border:1px solid rgba(255,255,255,.2)}
+    .weather{text-align:center}.icon{font-size:88px;line-height:1;margin:8px 0}.temp{font-size:58px;font-weight:950;letter-spacing:-.06em}.desc{font-size:18px;font-weight:800;margin-top:8px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+    .pill{background:rgba(255,255,255,.13);border-radius:18px;padding:12px;font-size:13px;color:var(--muted)}
+    .pill b{display:block;color:#fff;font-size:16px;margin-top:4px}
+    .status{color:var(--muted);font-size:13px;margin-top:10px;line-height:1.4}
+    .drop{position:absolute;top:-30px;width:2px;height:26px;background:rgba(191,219,254,.8);border-radius:999px;animation:rain linear infinite}
+    @keyframes rain{to{transform:translateY(115vh)}}
+    .snow{position:absolute;top:-30px;color:white;animation:snow linear infinite}
+    @keyframes snow{to{transform:translate3d(25px,115vh,0) rotate(360deg)}}
+    .sunball{position:absolute;right:-55px;top:-55px;width:190px;height:190px;border-radius:50%;background:radial-gradient(circle,#fef3c7,#f59e0b);box-shadow:0 0 90px rgba(251,191,36,.9);animation:pulse 3s ease-in-out infinite}
+    @keyframes pulse{50%{transform:scale(1.08)}}
+    .cloud{position:absolute;width:170px;height:62px;background:rgba(255,255,255,.34);border-radius:999px;animation:cloud linear infinite}
+    .cloud:before,.cloud:after{content:"";position:absolute;background:rgba(255,255,255,.34);border-radius:50%}
+    .cloud:before{width:80px;height:80px;left:24px;top:-36px}.cloud:after{width:96px;height:96px;right:18px;top:-48px}
+    @keyframes cloud{from{transform:translateX(-230px)}to{transform:translateX(125vw)}}
+  </style>
+</head>
+<body>
+  <div class="effects" id="effects"></div>
+  <main class="app">
+    <h1>Календарь погоды</h1>
+    <div class="sub">Время, дата, прогноз и живые эффекты</div>
+    <section class="card"><div class="time" id="time">00:00:00</div><div class="date" id="date">Сегодня</div></section>
+    <section class="card">
+      <div class="sub">Дата прогноза</div>
+      <input id="calendar" type="date" />
+      <button id="geoBtn">📍 Обновить по моей геолокации</button>
+      <div class="status" id="status">Загрузка...</div>
+    </section>
+    <section class="card weather">
+      <div class="icon" id="icon">🌤️</div>
+      <div class="temp" id="temp">--°</div>
+      <div class="desc" id="desc">Загружаем погоду</div>
+      <div class="grid"><div class="pill">Ветер <b id="wind">--</b></div><div class="pill">Осадки <b id="precip">--</b></div></div>
+    </section>
+  </main>
+<script>
+const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
+const fallback={lat:60.1699,lon:24.9384,name:"Хельсинки"};let loc=fallback;let cache=null;
+const $=id=>document.getElementById(id);
+const map={0:["sun","☀️","Ясно"],1:["sun","🌤️","Почти ясно"],2:["cloud","⛅","Переменная облачность"],3:["cloud","☁️","Облачно"],45:["fog","🌫️","Туман"],48:["fog","🌫️","Иней и туман"],51:["rain","🌦️","Лёгкая морось"],53:["rain","🌧️","Морось"],55:["rain","🌧️","Сильная морось"],61:["rain","🌧️","Небольшой дождь"],63:["rain","🌧️","Дождь"],65:["rain","🌧️","Сильный дождь"],71:["snow","🌨️","Небольшой снег"],73:["snow","🌨️","Снег"],75:["snow","❄️","Сильный снег"],80:["rain","🌧️","Ливень"],81:["rain","🌧️","Сильный ливень"],82:["thunder","⛈️","Очень сильный ливень"],95:["thunder","⛈️","Гроза"],96:["thunder","⛈️","Гроза с градом"],99:["thunder","⛈️","Сильная гроза"]};
+function tick(){const n=new Date();$("time").textContent=n.toLocaleTimeString("ru-RU");$("date").textContent=n.toLocaleDateString("ru-RU",{weekday:"long",year:"numeric",month:"long",day:"numeric"});}
+function localISO(d=new Date()){const c=new Date(d.getTime()-d.getTimezoneOffset()*60000);return c.toISOString().slice(0,10);}
+function setupCalendar(){const n=new Date(),m=new Date();m.setDate(m.getDate()+15);$("calendar").min=localISO(n);$("calendar").max=localISO(m);$("calendar").value=localISO(n);}
+async function loadWeather(){$("status").textContent="Загружаем погоду: "+loc.name;const url="https://api.open-meteo.com/v1/forecast?latitude="+loc.lat+"&longitude="+loc.lon+"&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=16";try{const r=await fetch(url);if(!r.ok)throw new Error("bad weather response");cache=await r.json();$("status").textContent="Погода загружена: "+loc.name;renderWeather();}catch(e){$("status").textContent="Не удалось загрузить погоду. Показываю демо.";renderDemo();}}
+function renderWeather(){const date=$("calendar").value;const i=cache?.daily?.time?.indexOf(date);if(i===undefined||i<0){renderDemo();return;}const code=cache.daily.weather_code[i];const [type,icon,text]=map[code]||["cloud","🌤️","Погода"];const tMax=Math.round(cache.daily.temperature_2m_max[i]);const tMin=Math.round(cache.daily.temperature_2m_min[i]);const wind=Math.round(cache.daily.wind_speed_10m_max[i]);const rain=cache.daily.precipitation_sum[i];$("icon").textContent=icon;$("temp").textContent=tMax+"°";$("desc").textContent=text+", ночью "+tMin+"°";$("wind").textContent=wind+" км/ч";$("precip").textContent=rain+" мм";effect(type);}
+function renderDemo(){$("icon").textContent="🌧️";$("temp").textContent="+12°";$("desc").textContent="Дождик, демо";$("wind").textContent="12 км/ч";$("precip").textContent="4 мм";effect("rain");}
+function effect(type){document.body.className=type;const box=$("effects");box.innerHTML="";if(type==="sun"){const s=document.createElement("div");s.className="sunball";box.appendChild(s);}if(["rain","thunder"].includes(type)){for(let i=0;i<110;i++){const d=document.createElement("div");d.className="drop";d.style.left=Math.random()*100+"vw";d.style.animationDuration=.45+Math.random()*.75+"s";d.style.animationDelay=Math.random()*2+"s";box.appendChild(d);}}if(["cloud","rain","thunder","fog"].includes(type)){for(let i=0;i<4;i++){const c=document.createElement("div");c.className="cloud";c.style.top=70+i*95+"px";c.style.animationDuration=18+i*5+"s";c.style.animationDelay=-i*4+"s";box.appendChild(c);}}if(type==="snow"){for(let i=0;i<90;i++){const s=document.createElement("div");s.className="snow";s.textContent="❄";s.style.left=Math.random()*100+"vw";s.style.fontSize=10+Math.random()*15+"px";s.style.animationDuration=4+Math.random()*7+"s";s.style.animationDelay=Math.random()*4+"s";box.appendChild(s);}}}
+function geo(){if(!navigator.geolocation){loc=fallback;loadWeather();return;}$("status").textContent="Запрашиваем геолокацию...";navigator.geolocation.getCurrentPosition(pos=>{loc={lat:pos.coords.latitude,lon:pos.coords.longitude,name:"моя геолокация"};loadWeather();},()=>{loc=fallback;loadWeather();},{enableHighAccuracy:true,timeout:8000,maximumAge:600000});}
+tick();setInterval(tick,1000);setupCalendar();$("calendar").addEventListener("change",renderWeather);$("geoBtn").addEventListener("click",geo);geo();
+</script>
+</body>
+</html>
