@@ -73,6 +73,15 @@
     .cloud:before,.cloud:after{content:"";position:absolute;background:rgba(255,255,255,.34);border-radius:50%}
     .cloud:before{width:80px;height:80px;left:24px;top:-36px}.cloud:after{width:96px;height:96px;right:18px;top:-48px}
     @keyframes cloud{from{transform:translateX(-230px)}to{transform:translateX(125vw)}}
+    @media (max-width:390px){
+      .app{padding:14px}
+      .card{padding:18px;border-radius:24px}
+      .city-row{grid-template-columns:1fr 46px}
+      .city-row #addCityBtn{grid-column:1/-1;width:100%;margin-top:0}
+      .city-row input{min-width:0}
+      h1{font-size:28px}
+      .time{font-size:48px}
+    }
   </style>
 </head>
 <body>
