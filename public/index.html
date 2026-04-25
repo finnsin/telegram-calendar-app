@@ -27,8 +27,9 @@
     input{color:#0f172a;background:rgba(255,255,255,.96)}
     button{margin-top:12px;background:rgba(255,255,255,.2);color:#fff;font-weight:800;border:1px solid rgba(255,255,255,.2)}
     button:active{transform:scale(.98)}
-    .city-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
+    .city-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center}
     .city-row button{width:auto;min-width:78px;margin-top:0;padding:15px 16px}
+    .icon-btn{width:46px!important;min-width:46px!important;height:46px;margin-top:0!important;padding:0!important;border-radius:50%!important;font-size:20px!important}
     .city-nav{display:grid;grid-template-columns:46px 1fr 46px;gap:10px;align-items:center;margin-top:12px}
     .city-nav button{width:46px;height:46px;margin-top:0;padding:0;border-radius:50%;font-size:22px}
     .city-name{text-align:center;font-weight:900;font-size:18px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -47,6 +48,17 @@
     .link-btn{background:transparent;border:none;color:var(--muted);padding:4px;margin:8px 0 0;font-size:13px;font-weight:700;text-decoration:underline}
     .weather{text-align:center}.icon{font-size:88px;line-height:1;margin:8px 0}.temp{font-size:58px;font-weight:950;letter-spacing:-.06em}.desc{font-size:18px;font-weight:800;margin-top:8px}
     .weather{touch-action:pan-y;user-select:none}
+    .advice{margin-top:12px;padding:11px 13px;border-radius:18px;background:rgba(255,255,255,.13);font-size:14px;font-weight:800;line-height:1.35}
+    .strip{display:flex;gap:10px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:none}
+    .strip::-webkit-scrollbar{display:none}
+    .hour,.day{flex:0 0 auto;min-width:74px;background:rgba(255,255,255,.13);border-radius:18px;padding:11px 10px;text-align:center}
+    .day{min-width:92px}
+    .hour b,.day b{display:block;font-size:17px;margin-top:5px}
+    .hour span,.day span{display:block;color:var(--muted);font-size:12px;font-weight:700}
+    .mini-icon{font-size:24px;line-height:1.1;margin:6px 0}
+    .settings{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .toggle{margin:0;padding:12px;border-radius:16px;font-size:14px}
+    .toggle.active{background:rgba(255,255,255,.92);color:#0f172a}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
     .pill{background:rgba(255,255,255,.13);border-radius:18px;padding:12px;font-size:13px;color:var(--muted)}
     .pill b{display:block;color:#fff;font-size:16px;margin-top:4px}
@@ -79,6 +91,7 @@
       <div class="sub">Города</div>
       <div class="city-row">
         <input id="cityInput" type="text" placeholder="Введите любой город" autocomplete="off" />
+        <button class="icon-btn" id="clearCityBtn" aria-label="Очистить поиск">×</button>
         <button id="addCityBtn">Найти</button>
       </div>
       <div class="suggestions" id="citySuggestions"></div>
@@ -92,46 +105,80 @@
       </div>
       <div class="dots" id="cityDots"></div>
       <div class="saved-cities" id="savedCities"></div>
+      <button id="favoriteBtn">⭐ Сделать город главным</button>
       <button class="link-btn" id="removeCityBtn">Удалить текущий город</button>
     </section>
     <section class="card weather" id="weatherCard">
       <div class="icon" id="icon">🌤️</div>
       <div class="temp" id="temp">--°</div>
       <div class="desc" id="desc">Загружаем погоду</div>
+      <div class="advice" id="advice">Подбираем совет по погоде</div>
       <div class="grid"><div class="pill">Ветер <b id="wind">--</b></div><div class="pill">Осадки <b id="precip">--</b></div></div>
+      <button id="shareBtn">Поделиться погодой</button>
+    </section>
+    <section class="card">
+      <div class="sub">Сегодня по часам</div>
+      <div class="strip" id="hourly"></div>
+    </section>
+    <section class="card">
+      <div class="sub">Прогноз на 7 дней</div>
+      <div class="strip" id="daily"></div>
+    </section>
+    <section class="card">
+      <div class="sub">Настройки</div>
+      <div class="settings">
+        <button class="toggle" id="windMsBtn">Ветер м/с</button>
+        <button class="toggle" id="windKmhBtn">Ветер км/ч</button>
+        <button class="toggle" id="time24Btn">24 часа</button>
+        <button class="toggle" id="time12Btn">12 часов</button>
+      </div>
     </section>
   </main>
 <script>
 const tg=window.Telegram?.WebApp;if(tg){tg.ready();tg.expand();}
-const fallback={lat:60.1699,lon:24.9384,name:"Хельсинки",country:"Финляндия"};const storageKey="weatherCitiesV1";let cities=[];let activeCity=0;let loc=fallback;let cache=null;let touchStartX=0;let touchStartY=0;let searchTimer=null;let searchRun=0;
+const fallback={lat:60.1699,lon:24.9384,name:"Хельсинки",country:"Финляндия"};const storageKey="weatherCitiesV1";let cities=[];let activeCity=0;let loc=fallback;let cache=null;let currentWeather=null;let settings={windUnit:"ms",timeFormat:"24",favorite:null};let touchStartX=0;let touchStartY=0;let searchTimer=null;let searchRun=0;
 const $=id=>document.getElementById(id);
 const map={0:["sun","☀️","Ясно"],1:["sun","🌤️","Почти ясно"],2:["cloud","⛅","Переменная облачность"],3:["cloud","☁️","Облачно"],45:["fog","🌫️","Туман"],48:["fog","🌫️","Иней и туман"],51:["rain","🌦️","Лёгкая морось"],53:["rain","🌧️","Морось"],55:["rain","🌧️","Сильная морось"],61:["rain","🌧️","Небольшой дождь"],63:["rain","🌧️","Дождь"],65:["rain","🌧️","Сильный дождь"],71:["snow","🌨️","Небольшой снег"],73:["snow","🌨️","Снег"],75:["snow","❄️","Сильный снег"],80:["rain","🌧️","Ливень"],81:["rain","🌧️","Сильный ливень"],82:["thunder","⛈️","Очень сильный ливень"],95:["thunder","⛈️","Гроза"],96:["thunder","⛈️","Гроза с градом"],99:["thunder","⛈️","Сильная гроза"]};
-function tick(){const n=new Date();$("time").textContent=n.toLocaleTimeString("ru-RU");$("date").textContent=n.toLocaleDateString("ru-RU",{weekday:"long",year:"numeric",month:"long",day:"numeric"});}
+function tick(){const n=new Date();$("time").textContent=n.toLocaleTimeString("ru-RU",{hour12:settings.timeFormat==="12"});$("date").textContent=n.toLocaleDateString("ru-RU",{weekday:"long",year:"numeric",month:"long",day:"numeric"});}
 function localISO(d=new Date()){const c=new Date(d.getTime()-d.getTimezoneOffset()*60000);return c.toISOString().slice(0,10);}
 function setupCalendar(){const n=new Date(),m=new Date();m.setDate(m.getDate()+15);$("calendar").min=localISO(n);$("calendar").max=localISO(m);$("calendar").value=localISO(n);}
 function cityLabel(city){return city.country?city.name+", "+city.country:city.name;}
 function cityDetails(city){return [city.admin1,city.country].filter(Boolean).join(", ");}
+function cityKey(city){return city.lat.toFixed(2)+","+city.lon.toFixed(2);}
+function formatWind(value){if(settings.windUnit==="kmh")return Math.round(value)+" км/ч";return Math.round(value/3.6)+" м/с";}
+function formatHour(value){const d=new Date(value);return d.toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit",hour12:settings.timeFormat==="12"});}
+function formatDay(value){return new Date(value).toLocaleDateString("ru-RU",{weekday:"short",day:"numeric"});}
+function adviceFor(type,tMax,wind,rain){if(type==="thunder")return "Возможна гроза, лучше держаться ближе к укрытию и не забыть зонт.";if(type==="snow")return tMax<=0?"Снег и мороз, одевайся теплее и выбирай нескользкую обувь.":"Будет снег, пригодится теплая куртка и обувь, которая не промокает.";if(type==="rain")return rain>5?"Дождь заметный, зонт или капюшон сегодня очень кстати.":"Может моросить, лучше взять легкий зонт.";if(wind>35)return "Ветрено, лучше куртку без свободного капюшона и аккуратнее на открытых местах.";if(tMax>=25)return "Тепло, вода и легкая одежда будут хорошей идеей.";if(tMax<=0)return "Холодно, лучше утеплиться.";if(tMax<=8)return "Прохладно, куртка или плотная кофта пригодятся.";return "Погода спокойная, можно одеваться по обычному плану.";}
 function normalizeCityText(value){return value.toLowerCase().replaceAll("ё","е").replace(/[ьъ\-\s]/g,"");}
 function citySearchQueries(query){const base=query.trim();const key=normalizeCityText(base);const variants=[base];if(key==="устилимск"||key==="устилим"||key==="ustilimsk")variants.push("Усть-Илимск","Усть Илимск");return [...new Set(variants)];}
 function resultToCity(found){return {lat:found.latitude,lon:found.longitude,name:found.name,country:found.country||"",admin1:found.admin1||"",population:found.population||0};}
 function sortCityResults(results,query){const key=normalizeCityText(query);return results.sort((a,b)=>{const aExact=normalizeCityText(a.name)===key?1:0;const bExact=normalizeCityText(b.name)===key?1:0;if(aExact!==bExact)return bExact-aExact;return (b.population||0)-(a.population||0);});}
 function clearCitySuggestions(){$("citySuggestions").innerHTML="";}
 function renderCitySuggestions(results){const box=$("citySuggestions");box.innerHTML="";results.forEach(city=>{const b=document.createElement("button");b.className="suggestion";const title=document.createElement("b");title.textContent=city.name;const meta=document.createElement("span");meta.textContent=cityDetails(city)||"координаты: "+city.lat.toFixed(2)+", "+city.lon.toFixed(2);b.append(title,meta);b.addEventListener("click",()=>selectCity(city));box.appendChild(b);});}
-function loadSavedCities(){try{const saved=JSON.parse(localStorage.getItem(storageKey));if(Array.isArray(saved?.cities)&&saved.cities.length){cities=saved.cities;activeCity=Math.min(Math.max(saved.activeCity||0,0),cities.length-1);return;}}catch(e){}cities=[fallback];activeCity=0;}
-function saveCities(){localStorage.setItem(storageKey,JSON.stringify({cities,activeCity}));}
+function loadSavedCities(){try{const saved=JSON.parse(localStorage.getItem(storageKey));if(saved?.settings)settings={...settings,...saved.settings};if(Array.isArray(saved?.cities)&&saved.cities.length){cities=saved.cities;activeCity=Math.min(Math.max(saved.activeCity||0,0),cities.length-1);const favoriteIndex=cities.findIndex(city=>cityKey(city)===settings.favorite);if(favoriteIndex>=0)activeCity=favoriteIndex;return;}}catch(e){}cities=[fallback];activeCity=0;settings.favorite=cityKey(fallback);}
+function saveCities(){localStorage.setItem(storageKey,JSON.stringify({cities,activeCity,settings}));}
 function setActiveCity(index){if(!cities.length)cities=[fallback];activeCity=(index+cities.length)%cities.length;loc=cities[activeCity];cache=null;saveCities();renderCities();loadWeather();}
-function renderCities(){loc=cities[activeCity]||fallback;$("cityName").textContent=loc.name;$("cityMeta").textContent=(activeCity+1)+" из "+cities.length+(loc.country?" • "+loc.country:"");$("removeCityBtn").style.display=cities.length>1?"block":"none";$("cityDots").innerHTML=cities.map((_,i)=>'<span class="dot '+(i===activeCity?"active":"")+'"></span>').join("");$("savedCities").innerHTML="";cities.forEach((city,i)=>{const b=document.createElement("button");b.className="chip"+(i===activeCity?" active":"");b.textContent=cityLabel(city);b.addEventListener("click",()=>setActiveCity(i));$("savedCities").appendChild(b);});}
-async function loadWeather(){$("status").textContent="Загружаем погоду: "+loc.name;const url="https://api.open-meteo.com/v1/forecast?latitude="+loc.lat+"&longitude="+loc.lon+"&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=16";try{const r=await fetch(url);if(!r.ok)throw new Error("bad weather response");cache=await r.json();$("status").textContent="Погода загружена: "+cityLabel(loc);renderWeather();}catch(e){$("status").textContent="Не удалось загрузить погоду. Показываю демо.";renderDemo();}}
+function renderSettings(){$("windMsBtn").classList.toggle("active",settings.windUnit==="ms");$("windKmhBtn").classList.toggle("active",settings.windUnit==="kmh");$("time24Btn").classList.toggle("active",settings.timeFormat==="24");$("time12Btn").classList.toggle("active",settings.timeFormat==="12");}
+function renderCities(){loc=cities[activeCity]||fallback;const isFavorite=cityKey(loc)===settings.favorite;$("cityName").textContent=(isFavorite?"⭐ ":"")+loc.name;$("cityMeta").textContent=(activeCity+1)+" из "+cities.length+(loc.country?" • "+loc.country:"");$("favoriteBtn").textContent=isFavorite?"⭐ Главный город":"⭐ Сделать город главным";$("removeCityBtn").style.display=cities.length>1?"block":"none";$("cityDots").innerHTML=cities.map((_,i)=>'<span class="dot '+(i===activeCity?"active":"")+'"></span>').join("");$("savedCities").innerHTML="";cities.forEach((city,i)=>{const b=document.createElement("button");b.className="chip"+(i===activeCity?" active":"");b.textContent=(cityKey(city)===settings.favorite?"⭐ ":"")+cityLabel(city);b.addEventListener("click",()=>setActiveCity(i));$("savedCities").appendChild(b);});renderSettings();}
+async function loadWeather(){$("status").textContent="Загружаем погоду: "+loc.name;const daily="weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max";const hourly="temperature_2m,weather_code,precipitation_probability,wind_speed_10m";const url="https://api.open-meteo.com/v1/forecast?latitude="+loc.lat+"&longitude="+loc.lon+"&daily="+daily+"&hourly="+hourly+"&timezone=auto&forecast_days=16";try{const r=await fetch(url);if(!r.ok)throw new Error("bad weather response");cache=await r.json();$("status").textContent="Погода загружена: "+cityLabel(loc);renderWeather();renderHourly();renderDaily();}catch(e){$("status").textContent="Не удалось загрузить погоду. Показываю демо.";renderDemo();}}
 function selectCity(city){const same=cities.findIndex(item=>Math.abs(item.lat-city.lat)<.01&&Math.abs(item.lon-city.lon)<.01);$("cityInput").value="";clearCitySuggestions();if(same>=0){setActiveCity(same);}else{cities.push(city);setActiveCity(cities.length-1);}}
 async function addCity(){const query=$("cityInput").value.trim();const run=++searchRun;if(!query){$("status").textContent="Введите название города.";clearCitySuggestions();return;}if(query.length<2){clearCitySuggestions();$("status").textContent="Введите минимум 2 буквы для поиска города.";return;}$("addCityBtn").disabled=true;clearCitySuggestions();$("status").textContent="Ищем город: "+query;try{const seen=new Set();let results=[];for(const variant of citySearchQueries(query)){const url="https://geocoding-api.open-meteo.com/v1/search?name="+encodeURIComponent(variant)+"&count=10&language=ru&format=json";const r=await fetch(url);if(!r.ok)throw new Error("bad geocode response");const data=await r.json();for(const found of data.results||[]){const city=resultToCity(found);const key=city.lat.toFixed(2)+","+city.lon.toFixed(2);if(!seen.has(key)){seen.add(key);results.push(city);}}}if(run!==searchRun)return;results=sortCityResults(results,query).slice(0,8);if(!results.length){$("status").textContent="Город не найден. Попробуйте другое написание, например Усть-Илимск.";return;}renderCitySuggestions(results);$("status").textContent="Выберите нужный город из вариантов ниже.";}catch(e){if(run===searchRun)$("status").textContent="Не удалось найти город. Проверьте интернет и попробуйте снова.";}finally{if(run===searchRun)$("addCityBtn").disabled=false;}}
-function scheduleCitySearch(){clearTimeout(searchTimer);const query=$("cityInput").value.trim();if(!query){++searchRun;clearCitySuggestions();$("addCityBtn").disabled=false;return;}if(query.length<2){++searchRun;clearCitySuggestions();return;}searchTimer=setTimeout(addCity,450);}
+function scheduleCitySearch(){clearTimeout(searchTimer);const query=$("cityInput").value.trim();if(!query){++searchRun;clearCitySuggestions();$("addCityBtn").disabled=false;return;}if(query.length<2){++searchRun;clearCitySuggestions();$("addCityBtn").disabled=false;return;}searchTimer=setTimeout(addCity,450);}
+function clearCitySearch(){$("cityInput").value="";++searchRun;clearTimeout(searchTimer);clearCitySuggestions();$("addCityBtn").disabled=false;}
 function removeCity(){if(cities.length<=1)return;cities.splice(activeCity,1);activeCity=Math.min(activeCity,cities.length-1);setActiveCity(activeCity);}
-function renderWeather(){const date=$("calendar").value;const i=cache?.daily?.time?.indexOf(date);if(i===undefined||i<0){renderDemo();return;}const code=cache.daily.weather_code[i];const [type,icon,text]=map[code]||["cloud","🌤️","Погода"];const tMax=Math.round(cache.daily.temperature_2m_max[i]);const tMin=Math.round(cache.daily.temperature_2m_min[i]);const wind=Math.round(cache.daily.wind_speed_10m_max[i]);const rain=cache.daily.precipitation_sum[i];$("icon").textContent=icon;$("temp").textContent=tMax+"°";$("desc").textContent=text+", ночью "+tMin+"°";$("wind").textContent=wind+" км/ч";$("precip").textContent=rain+" мм";effect(type);}
-function renderDemo(){$("icon").textContent="🌧️";$("temp").textContent="+12°";$("desc").textContent="Дождик, демо";$("wind").textContent="12 км/ч";$("precip").textContent="4 мм";effect("rain");}
+function setFavorite(){settings.favorite=cityKey(loc);saveCities();renderCities();}
+function setWindUnit(unit){settings.windUnit=unit;saveCities();renderSettings();renderWeather();renderHourly();renderDaily();}
+function setTimeFormat(format){settings.timeFormat=format;saveCities();renderSettings();tick();renderHourly();}
+function renderWeather(){const date=$("calendar").value;const i=cache?.daily?.time?.indexOf(date);if(i===undefined||i<0){renderDemo();return;}const code=cache.daily.weather_code[i];const [type,icon,text]=map[code]||["cloud","🌤️","Погода"];const tMax=Math.round(cache.daily.temperature_2m_max[i]);const tMin=Math.round(cache.daily.temperature_2m_min[i]);const wind=Math.round(cache.daily.wind_speed_10m_max[i]);const rain=cache.daily.precipitation_sum[i];currentWeather={type,icon,text,tMax,tMin,wind,rain,date};$("icon").textContent=icon;$("temp").textContent=tMax+"°";$("desc").textContent=text+", ночью "+tMin+"°";$("wind").textContent=formatWind(wind);$("precip").textContent=rain+" мм";$("advice").textContent=adviceFor(type,tMax,wind,rain);effect(type);}
+function renderHourly(){const box=$("hourly");box.innerHTML="";const date=$("calendar").value;if(!cache?.hourly?.time){box.textContent="Нет данных";return;}cache.hourly.time.forEach((time,i)=>{if(!time.startsWith(date))return;const hour=new Date(time).getHours();if(hour%3!==0)return;const code=cache.hourly.weather_code[i];const [,icon]=map[code]||["cloud","🌤️","Погода"];const item=document.createElement("div");item.className="hour";item.innerHTML="<span>"+formatHour(time)+"</span><div class=\"mini-icon\">"+icon+"</div><b>"+Math.round(cache.hourly.temperature_2m[i])+"°</b><span>"+formatWind(cache.hourly.wind_speed_10m[i])+"</span>";box.appendChild(item);});if(!box.children.length)box.textContent="Нет почасовых данных для этой даты";}
+function renderDaily(){const box=$("daily");box.innerHTML="";if(!cache?.daily?.time){box.textContent="Нет данных";return;}cache.daily.time.slice(0,7).forEach((time,i)=>{const code=cache.daily.weather_code[i];const [,icon,text]=map[code]||["cloud","🌤️","Погода"];const item=document.createElement("div");item.className="day";item.innerHTML="<span>"+formatDay(time)+"</span><div class=\"mini-icon\">"+icon+"</div><b>"+Math.round(cache.daily.temperature_2m_max[i])+"°</b><span>"+Math.round(cache.daily.temperature_2m_min[i])+"° ночью</span><span>"+text+"</span>";box.appendChild(item);});}
+function renderDemo(){currentWeather={type:"rain",icon:"🌧️",text:"Дождик, демо",tMax:12,tMin:8,wind:43,rain:4,date:$("calendar").value};$("icon").textContent="🌧️";$("temp").textContent="+12°";$("desc").textContent="Дождик, демо";$("wind").textContent=formatWind(43);$("precip").textContent="4 мм";$("advice").textContent=adviceFor("rain",12,43,4);$("hourly").innerHTML="";$("daily").innerHTML="";effect("rain");}
 function effect(type){document.body.className="weather-"+type;const box=$("effects");box.innerHTML="";if(type==="sun"){const s=document.createElement("div");s.className="sunball";box.appendChild(s);}if(["rain","thunder"].includes(type)){for(let i=0;i<110;i++){const d=document.createElement("div");d.className="drop";d.style.left=Math.random()*100+"vw";d.style.animationDuration=.45+Math.random()*.75+"s";d.style.animationDelay=Math.random()*2+"s";box.appendChild(d);}}if(["cloud","rain","thunder","fog"].includes(type)){for(let i=0;i<4;i++){const c=document.createElement("div");c.className="cloud";c.style.top=70+i*95+"px";c.style.animationDuration=18+i*5+"s";c.style.animationDelay=-i*4+"s";box.appendChild(c);}}if(type==="snow"){for(let i=0;i<90;i++){const s=document.createElement("div");s.className="snow";s.textContent="❄";s.style.left=Math.random()*100+"vw";s.style.fontSize=10+Math.random()*15+"px";s.style.animationDuration=4+Math.random()*7+"s";s.style.animationDelay=Math.random()*4+"s";box.appendChild(s);}}}
-function geo(){if(!navigator.geolocation){setActiveCity(activeCity);return;}$("status").textContent="Запрашиваем геолокацию...";navigator.geolocation.getCurrentPosition(pos=>{const city={lat:pos.coords.latitude,lon:pos.coords.longitude,name:"моя геолокация",country:""};const same=cities.findIndex(item=>item.name==="моя геолокация");if(same>=0){cities[same]=city;activeCity=same;}else{cities.push(city);activeCity=cities.length-1;}setActiveCity(activeCity);},()=>{setActiveCity(activeCity);},{enableHighAccuracy:true,timeout:8000,maximumAge:600000});}
+async function reverseGeocode(lat,lon){try{const url="https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat="+lat+"&lon="+lon+"&zoom=10&accept-language=ru";const r=await fetch(url);if(!r.ok)throw new Error("bad reverse response");const data=await r.json();const a=data.address||{};return {name:a.city||a.town||a.village||a.municipality||a.county||"моя геолокация",country:a.country||"",admin1:a.state||a.region||""};}catch(e){return {name:"моя геолокация",country:"",admin1:""};}}
+async function geo(){if(!navigator.geolocation){setActiveCity(activeCity);return;}$("status").textContent="Запрашиваем геолокацию...";navigator.geolocation.getCurrentPosition(async pos=>{const lat=pos.coords.latitude,lon=pos.coords.longitude;const place=await reverseGeocode(lat,lon);const city={lat,lon,name:place.name,country:place.country,admin1:place.admin1};const same=cities.findIndex(item=>item.name==="моя геолокация"||Math.abs(item.lat-city.lat)<.01&&Math.abs(item.lon-city.lon)<.01);if(same>=0){cities[same]=city;activeCity=same;}else{cities.push(city);activeCity=cities.length-1;}setActiveCity(activeCity);},()=>{setActiveCity(activeCity);},{enableHighAccuracy:true,timeout:8000,maximumAge:600000});}
+async function shareWeather(){if(!currentWeather)return;const text=cityLabel(loc)+": "+currentWeather.tMax+"°, "+currentWeather.text.toLowerCase()+", ветер "+formatWind(currentWeather.wind)+", осадки "+currentWeather.rain+" мм.";if(tg?.openTelegramLink){tg.openTelegramLink("https://t.me/share/url?text="+encodeURIComponent(text));return;}try{if(navigator.share){await navigator.share({text});return;}await navigator.clipboard.writeText(text);$("status").textContent="Погода скопирована в буфер обмена.";}catch(e){$("status").textContent=text;}}
 function setupSwipe(){const card=$("weatherCard");card.addEventListener("touchstart",e=>{touchStartX=e.changedTouches[0].clientX;touchStartY=e.changedTouches[0].clientY;},{passive:true});card.addEventListener("touchend",e=>{const dx=e.changedTouches[0].clientX-touchStartX;const dy=e.changedTouches[0].clientY-touchStartY;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.4){setActiveCity(activeCity+(dx<0?1:-1));}},{passive:true});}
-tick();setInterval(tick,1000);setupCalendar();loadSavedCities();renderCities();$("calendar").addEventListener("change",renderWeather);$("geoBtn").addEventListener("click",geo);$("addCityBtn").addEventListener("click",addCity);$("cityInput").addEventListener("input",scheduleCitySearch);$("cityInput").addEventListener("keydown",e=>{if(e.key==="Enter"){clearTimeout(searchTimer);addCity();}});$("prevCityBtn").addEventListener("click",()=>setActiveCity(activeCity-1));$("nextCityBtn").addEventListener("click",()=>setActiveCity(activeCity+1));$("removeCityBtn").addEventListener("click",removeCity);setupSwipe();setActiveCity(activeCity);
+tick();setInterval(tick,1000);setupCalendar();loadSavedCities();renderCities();$("calendar").addEventListener("change",()=>{renderWeather();renderHourly();});$("geoBtn").addEventListener("click",geo);$("addCityBtn").addEventListener("click",addCity);$("clearCityBtn").addEventListener("click",clearCitySearch);$("cityInput").addEventListener("input",scheduleCitySearch);$("cityInput").addEventListener("keydown",e=>{if(e.key==="Enter"){clearTimeout(searchTimer);addCity();}});$("prevCityBtn").addEventListener("click",()=>setActiveCity(activeCity-1));$("nextCityBtn").addEventListener("click",()=>setActiveCity(activeCity+1));$("favoriteBtn").addEventListener("click",setFavorite);$("removeCityBtn").addEventListener("click",removeCity);$("shareBtn").addEventListener("click",shareWeather);$("windMsBtn").addEventListener("click",()=>setWindUnit("ms"));$("windKmhBtn").addEventListener("click",()=>setWindUnit("kmh"));$("time24Btn").addEventListener("click",()=>setTimeFormat("24"));$("time12Btn").addEventListener("click",()=>setTimeFormat("12"));setupSwipe();setActiveCity(activeCity);
 </script>
 </body>
 </html>
