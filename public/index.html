@@ -40,6 +40,10 @@
     .saved-cities::-webkit-scrollbar{display:none}
     .chip{flex:0 0 auto;width:auto;margin:0;padding:9px 12px;border-radius:999px;font-size:13px;font-weight:800;background:rgba(255,255,255,.15)}
     .chip.active{background:rgba(255,255,255,.92);color:#0f172a}
+    .suggestions{display:grid;gap:8px;margin-top:12px}
+    .suggestion{display:block;width:100%;margin:0;padding:11px 13px;border-radius:16px;text-align:left;background:rgba(255,255,255,.14)}
+    .suggestion b{display:block;font-size:15px;color:#fff}
+    .suggestion span{display:block;margin-top:3px;font-size:12px;color:var(--muted);font-weight:700}
     .link-btn{background:transparent;border:none;color:var(--muted);padding:4px;margin:8px 0 0;font-size:13px;font-weight:700;text-decoration:underline}
     .weather{text-align:center}.icon{font-size:88px;line-height:1;margin:8px 0}.temp{font-size:58px;font-weight:950;letter-spacing:-.06em}.desc{font-size:18px;font-weight:800;margin-top:8px}
     .weather{touch-action:pan-y;user-select:none}
@@ -75,8 +79,9 @@
       <div class="sub">Города</div>
       <div class="city-row">
         <input id="cityInput" type="text" placeholder="Введите любой город" autocomplete="off" />
-        <button id="addCityBtn">Добавить</button>
+        <button id="addCityBtn">Найти</button>
       </div>
+      <div class="suggestions" id="citySuggestions"></div>
       <div class="city-nav">
         <button id="prevCityBtn" aria-label="Предыдущий город">‹</button>
         <div>
@@ -105,12 +110,20 @@ function tick(){const n=new Date();$("time").textContent=n.toLocaleTimeString("r
 function localISO(d=new Date()){const c=new Date(d.getTime()-d.getTimezoneOffset()*60000);return c.toISOString().slice(0,10);}
 function setupCalendar(){const n=new Date(),m=new Date();m.setDate(m.getDate()+15);$("calendar").min=localISO(n);$("calendar").max=localISO(m);$("calendar").value=localISO(n);}
 function cityLabel(city){return city.country?city.name+", "+city.country:city.name;}
+function cityDetails(city){return [city.admin1,city.country].filter(Boolean).join(", ");}
+function normalizeCityText(value){return value.toLowerCase().replaceAll("ё","е").replace(/[ьъ\-\s]/g,"");}
+function citySearchQueries(query){const base=query.trim();const key=normalizeCityText(base);const variants=[base];if(key==="устилимск"||key==="устилим"||key==="ustilimsk")variants.push("Усть-Илимск","Усть Илимск");return [...new Set(variants)];}
+function resultToCity(found){return {lat:found.latitude,lon:found.longitude,name:found.name,country:found.country||"",admin1:found.admin1||"",population:found.population||0};}
+function sortCityResults(results,query){const key=normalizeCityText(query);return results.sort((a,b)=>{const aExact=normalizeCityText(a.name)===key?1:0;const bExact=normalizeCityText(b.name)===key?1:0;if(aExact!==bExact)return bExact-aExact;return (b.population||0)-(a.population||0);});}
+function clearCitySuggestions(){$("citySuggestions").innerHTML="";}
+function renderCitySuggestions(results){const box=$("citySuggestions");box.innerHTML="";results.forEach(city=>{const b=document.createElement("button");b.className="suggestion";const title=document.createElement("b");title.textContent=city.name;const meta=document.createElement("span");meta.textContent=cityDetails(city)||"координаты: "+city.lat.toFixed(2)+", "+city.lon.toFixed(2);b.append(title,meta);b.addEventListener("click",()=>selectCity(city));box.appendChild(b);});}
 function loadSavedCities(){try{const saved=JSON.parse(localStorage.getItem(storageKey));if(Array.isArray(saved?.cities)&&saved.cities.length){cities=saved.cities;activeCity=Math.min(Math.max(saved.activeCity||0,0),cities.length-1);return;}}catch(e){}cities=[fallback];activeCity=0;}
 function saveCities(){localStorage.setItem(storageKey,JSON.stringify({cities,activeCity}));}
 function setActiveCity(index){if(!cities.length)cities=[fallback];activeCity=(index+cities.length)%cities.length;loc=cities[activeCity];cache=null;saveCities();renderCities();loadWeather();}
 function renderCities(){loc=cities[activeCity]||fallback;$("cityName").textContent=loc.name;$("cityMeta").textContent=(activeCity+1)+" из "+cities.length+(loc.country?" • "+loc.country:"");$("removeCityBtn").style.display=cities.length>1?"block":"none";$("cityDots").innerHTML=cities.map((_,i)=>'<span class="dot '+(i===activeCity?"active":"")+'"></span>').join("");$("savedCities").innerHTML="";cities.forEach((city,i)=>{const b=document.createElement("button");b.className="chip"+(i===activeCity?" active":"");b.textContent=cityLabel(city);b.addEventListener("click",()=>setActiveCity(i));$("savedCities").appendChild(b);});}
 async function loadWeather(){$("status").textContent="Загружаем погоду: "+loc.name;const url="https://api.open-meteo.com/v1/forecast?latitude="+loc.lat+"&longitude="+loc.lon+"&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max&timezone=auto&forecast_days=16";try{const r=await fetch(url);if(!r.ok)throw new Error("bad weather response");cache=await r.json();$("status").textContent="Погода загружена: "+cityLabel(loc);renderWeather();}catch(e){$("status").textContent="Не удалось загрузить погоду. Показываю демо.";renderDemo();}}
-async function addCity(){const query=$("cityInput").value.trim();if(!query){$("status").textContent="Введите название города.";return;}$("addCityBtn").disabled=true;$("status").textContent="Ищем город: "+query;try{const url="https://geocoding-api.open-meteo.com/v1/search?name="+encodeURIComponent(query)+"&count=1&language=ru&format=json";const r=await fetch(url);if(!r.ok)throw new Error("bad geocode response");const data=await r.json();const found=data.results?.[0];if(!found){$("status").textContent="Город не найден. Попробуйте написать название точнее.";$("addCityBtn").disabled=false;return;}const city={lat:found.latitude,lon:found.longitude,name:found.name,country:found.country||"",admin1:found.admin1||""};const same=cities.findIndex(item=>Math.abs(item.lat-city.lat)<.01&&Math.abs(item.lon-city.lon)<.01);$("cityInput").value="";if(same>=0){setActiveCity(same);}else{cities.push(city);setActiveCity(cities.length-1);}}catch(e){$("status").textContent="Не удалось найти город. Проверьте интернет и попробуйте снова.";}finally{$("addCityBtn").disabled=false;}}
+function selectCity(city){const same=cities.findIndex(item=>Math.abs(item.lat-city.lat)<.01&&Math.abs(item.lon-city.lon)<.01);$("cityInput").value="";clearCitySuggestions();if(same>=0){setActiveCity(same);}else{cities.push(city);setActiveCity(cities.length-1);}}
+async function addCity(){const query=$("cityInput").value.trim();if(!query){$("status").textContent="Введите название города.";clearCitySuggestions();return;}$("addCityBtn").disabled=true;clearCitySuggestions();$("status").textContent="Ищем город: "+query;try{const seen=new Set();let results=[];for(const variant of citySearchQueries(query)){const url="https://geocoding-api.open-meteo.com/v1/search?name="+encodeURIComponent(variant)+"&count=10&language=ru&format=json";const r=await fetch(url);if(!r.ok)throw new Error("bad geocode response");const data=await r.json();for(const found of data.results||[]){const city=resultToCity(found);const key=city.lat.toFixed(2)+","+city.lon.toFixed(2);if(!seen.has(key)){seen.add(key);results.push(city);}}}results=sortCityResults(results,query).slice(0,8);if(!results.length){$("status").textContent="Город не найден. Попробуйте другое написание, например Усть-Илимск.";return;}renderCitySuggestions(results);$("status").textContent="Выберите нужный город из вариантов ниже.";}catch(e){$("status").textContent="Не удалось найти город. Проверьте интернет и попробуйте снова.";}finally{$("addCityBtn").disabled=false;}}
 function removeCity(){if(cities.length<=1)return;cities.splice(activeCity,1);activeCity=Math.min(activeCity,cities.length-1);setActiveCity(activeCity);}
 function renderWeather(){const date=$("calendar").value;const i=cache?.daily?.time?.indexOf(date);if(i===undefined||i<0){renderDemo();return;}const code=cache.daily.weather_code[i];const [type,icon,text]=map[code]||["cloud","🌤️","Погода"];const tMax=Math.round(cache.daily.temperature_2m_max[i]);const tMin=Math.round(cache.daily.temperature_2m_min[i]);const wind=Math.round(cache.daily.wind_speed_10m_max[i]);const rain=cache.daily.precipitation_sum[i];$("icon").textContent=icon;$("temp").textContent=tMax+"°";$("desc").textContent=text+", ночью "+tMin+"°";$("wind").textContent=wind+" км/ч";$("precip").textContent=rain+" мм";effect(type);}
 function renderDemo(){$("icon").textContent="🌧️";$("temp").textContent="+12°";$("desc").textContent="Дождик, демо";$("wind").textContent="12 км/ч";$("precip").textContent="4 мм";effect("rain");}
